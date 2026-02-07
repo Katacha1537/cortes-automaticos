@@ -1,0 +1,8 @@
+node_modules/
+.env
+output/
+videos/
+uploads/
+*.exe
+*.mp4
+*.log
