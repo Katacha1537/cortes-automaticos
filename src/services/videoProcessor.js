@@ -77,7 +77,23 @@ function removeSilence(inputPath, outputPath) {
     return new Promise(async (resolve, reject) => {
         console.log(`Removing silence from: ${inputPath}...`);
 
+        const tempAudioPath = path.resolve(path.dirname(outputPath), `temp_silence_analysis_${Date.now()}.wav`);
+
         try {
+            // 1. Extract lightweight audio for analysis (16kHz mono WAV is much faster to process)
+            console.log('Extracting temporary audio for analysis...');
+            await new Promise((res, rej) => {
+                ffmpeg(inputPath)
+                    .noVideo()
+                    .audioChannels(1)
+                    .audioFrequency(16000)
+                    .format('wav')
+                    .output(tempAudioPath)
+                    .on('end', res)
+                    .on('error', rej)
+                    .run();
+            });
+
             // Configuration for silence detection
             const SILENCE_THRESHOLD = -30; // dB
             const MIN_SILENCE_DURATION = 0.5; // seconds
@@ -98,6 +114,7 @@ function removeSilence(inputPath, outputPath) {
             const getSilenceSegments = (file) => {
                 return new Promise((resSec, rejSec) => {
                     const ffmpegCmd = fs.existsSync(ffmpegPath) ? ffmpegPath : 'ffmpeg';
+                    // Analyze the WAV file instead of the original video
                     const proc = spawn(ffmpegCmd, [
                         '-i', file,
                         '-af', `silencedetect=n=${SILENCE_THRESHOLD}dB:d=${MIN_SILENCE_DURATION}`,
@@ -134,7 +151,12 @@ function removeSilence(inputPath, outputPath) {
             };
 
             const totalDuration = getDuration(inputPath);
-            const silences = await getSilenceSegments(inputPath);
+            // Use tempAudioPath for silence detection
+            console.log('Analyzing audio for silence...');
+            const silences = await getSilenceSegments(tempAudioPath);
+
+            // Cleanup temp audio immediately after analysis
+            try { if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath); } catch (e) { }
 
             if (silences.length === 0) {
                 console.log('No silence detected. Copying original file.');
@@ -208,7 +230,8 @@ function removeSilence(inputPath, outputPath) {
                 // Cleanup filter file
                 try {
                     if (fs.existsSync(filterPath)) fs.unlinkSync(filterPath);
-                } catch (e) { console.warn('Filter cleanup failed', e); }
+                    if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath); // Ensure double cleanup just in case
+                } catch (e) { console.warn('Cleanup failed', e); }
 
                 if (code === 0) {
                     console.log(`Silence removal complete: ${outputPath}`);
@@ -219,6 +242,8 @@ function removeSilence(inputPath, outputPath) {
             });
 
         } catch (err) {
+            // Cleanup on error
+            try { if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath); } catch (e) { }
             reject(err);
         }
     });
