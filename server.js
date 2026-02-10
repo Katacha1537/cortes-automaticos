@@ -83,6 +83,7 @@ async function processVideoPipeline(videoPath, res) {
 
         if (fs.existsSync(analysisCachePath)) {
             console.log('[4/5] Found existing analysis, loading from cache...');
+            console.log(`NOTE: If you want to re-analyze with updated prompts, delete this file: ${analysisCachePath}`);
             viralMoments = JSON.parse(fs.readFileSync(analysisCachePath, 'utf8'));
         } else {
             console.log('[4/5] Analyzing for viral moments...');
